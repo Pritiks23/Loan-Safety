@@ -1,0 +1,266 @@
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+import seaborn as sns
+from mpl_toolkits.mplot3d import Axes3D
+
+%matplotlib inline
+sns.set()
+np.random.seed(416)
+
+# Load in data
+loans = pd.read_csv('lending-club-data.csv')
+loans.head()
+# Want the grades to show up in order from high to low
+grade_order = sorted(loans['grade'].unique())
+
+sns.countplot(x='grade', data=loans, order=grade_order)
+  ownership_order = sorted(loans['home_ownership'].unique())
+
+sns.countplot(x='home_ownership', data=loans, order=ownership_order)
+  loans['safe_loans'] = loans['bad_loans'].apply(lambda x : +1 if x==0 else -1)
+
+# Drop the old bad_loans column
+loans = loans.drop(columns='bad_loans')
+  only_safe = loans[loans['safe_loans'] == 1]
+only_bad = loans[loans['safe_loans'] == -1]
+
+print(f'Number safe  loans: {len(only_safe)} ({len(only_safe) * 100.0 / len(loans):.2f}%)')
+print(f'Number risky loans: {len(only_bad)} ({len(only_bad) * 100.0 / len(loans):.2f}%)')
+# Q1: Write code to find most frequent grade
+# TODO 
+
+mode_grade = loans['grade'].mode()[0]
+print(mode_grade)
+# Q2: Write code to find percent of loans for rent
+# TODO 
+
+percent_rent = (loans['home_ownership'] == 'RENT').mean()
+print(percent_rent)
+features = [
+    'grade',                     # grade of the loan (e.g. A or B)
+    'sub_grade',                 # sub-grade of the loan (e.g. A1, A2, B1)
+    'short_emp',                 # one year or less of employment (0 or 1)
+    'emp_length_num',            # number of years of employment (a number)
+    'home_ownership',            # home_ownership status (one of own, mortgage, rent or other)
+    'dti',                       # debt to income ratio (a number)
+    'purpose',                   # the purpose of the loan (one of many values)
+    'term',                      # the term of the loan (36 months or 60 months)
+    'last_delinq_none',          # has borrower had a delinquincy (0 or 1)
+    'last_major_derog_none',     # has borrower had 90 day or worse rating (0 or 1)
+    'revol_util',                # percent of available credit being used (number between 0 and 100)
+    'total_rec_late_fee',        # total late fees received to day (a number)
+]
+
+target = 'safe_loans'                   # prediction target (y) (+1 means safe, -1 is risky)
+
+# Extract the feature columns and target column
+loans = loans[features + [target]]
+loans.head()
+loans.columns
+loans = pd.get_dummies(loans)
+features = list(loans.columns)
+features.remove('safe_loans')
+from sklearn.model_selection import train_test_split
+
+train_data, validation_data = train_test_split(loans, test_size=0.2)
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.metrics import confusion_matrix
+# Q3: Train a model with max_depth=6
+# TODO 
+
+dt = DecisionTreeClassifier(max_depth=6)
+
+dt.fit(train_data[features], train_data[target])
+dt_y_pred = dt.predict(validation_data[features])
+dt_score = dt.score(validation_data[features], validation_data[target])
+decision_tree_model = dt
+from sklearn import tree
+
+
+def draw_tree(tree_model, features):
+    """
+    visualizes a Decision Tree
+    """
+    tree_data = tree.export_graphviz(tree_model, 
+                                    impurity=False, 
+                                    feature_names=features,
+                                    class_names=tree_model.classes_.astype(str),
+                                    filled=True,
+                                    out_file=None)
+    graph = graphviz.Source(tree_data) 
+    display(graph)
+    
+small_tree_model = DecisionTreeClassifier(max_depth=2, random_state=0)
+small_tree_model.fit(train_data[features], train_data[target])
+draw_tree(small_tree_model, features)
+### edTest(test_q4_validation_accuracy) ###
+from sklearn.metrics import accuracy_score
+# Q4: Find train and validation accuracy
+# TODO 
+pred_t = dt.predict(train_data[features])
+pred_v = dt.predict(validation_data[features])
+decision_train_accuracy = accuracy_score(train_data[target], pred_t)
+decision_validation_accuracy = accuracy_score(validation_data[target], pred_v)
+# Q5: Train a decision tree model with max_depth=10
+# TODO 
+
+tall = DecisionTreeClassifier(max_depth=10)
+
+tall.fit(train_data[features], train_data[target])
+tall_y_pred = dt.predict(validation_data[features])
+tall_score = dt.score(validation_data[features], validation_data[target])
+big_tree_model = tall
+pred_tall = tall.predict(train_data[features])
+pred_v_tall = tall.predict(validation_data[features])
+big_train_accuracy = accuracy_score(train_data[target], pred_tall)
+big_validation_accuracy = accuracy_score(validation_data[target], pred_v_tall)
+# Q6: Use GridSearchCV to find best settings of hyperparameters
+# TODO 
+from sklearn.model_selection import GridSearchCV
+from sklearn.tree import DecisionTreeClassifier
+min_samples_leaf = [1, 10, 50, 100, 200, 300]
+max_depth = [1, 5, 10, 15, 20]
+hyperparameters = {'min_samples_leaf': min_samples_leaf,
+'max_depth': max_depth}
+search = GridSearchCV(
+    estimator=DecisionTreeClassifier(),
+    param_grid=hyperparameters,
+    cv=6,
+    return_train_score=True
+)
+search.fit(train_data[features], train_data[target])
+print(search.best_params_)
+def plot_scores(ax, title, search, hyperparameters, score_key):
+    # Get results from GridSearch and turn scores into matrix
+    cv_results = search.cv_results_
+    scores = cv_results[score_key]
+    scores = scores.reshape((len(hyperparameters['max_depth']), len(hyperparameters['min_samples_leaf'])))
+    max_depths = cv_results['param_max_depth'].reshape(scores.shape).data.astype(int)
+    min_samples_leafs = cv_results['param_min_samples_leaf'].reshape(scores.shape).data.astype(int)
+    
+    # Plot result
+    ax.plot_wireframe(max_depths, min_samples_leafs, scores)
+    ax.view_init(20, 220)
+    ax.set_xlabel('Maximum Depth')
+    ax.set_ylabel('Minimum Samples Leaf')
+    ax.set_zlabel('Accuracy')
+    ax.set_title(title)
+
+
+fig = plt.figure(figsize=(15,7))
+ax1 = fig.add_subplot(121, projection='3d')
+ax2 = fig.add_subplot(122, projection='3d')
+plot_scores(ax1, 'Train Accuracy', search, hyperparameters, 'mean_train_score')
+plot_scores(ax2, 'Validation Accuracy', search, hyperparameters, 'mean_test_score')
+import numpy as np
+from sklearn.tree import DecisionTreeClassifier
+import scipy.stats 
+
+class RandomForest416: 
+    """
+    This class implements the common sklearn model interface (has a fit and predict function).
+    
+    A random forest is a collection of decision trees that are trained on random subsets of the 
+    dataset. When predicting the value for an example, takes a majority vote from the trees.
+    """
+    
+    def __init__(self, num_trees, max_depth=1):
+        """
+        Constructs a RandomForest416 that uses the given numbner of trees, each with a 
+        max depth of max_depth.
+        """
+        self.num_trees = num_trees
+        self.max_depth = max_depth
+        self._trees = [
+            DecisionTreeClassifier(max_depth=max_depth) 
+            for i in range(num_trees)
+        ]
+        
+    def fit(self, X, y):
+        """
+        Takes an input dataset X and a series of targets y and trains the RandomForest416.
+         Each tree will be trained on a random sample of the data that samples the examples
+        uniformly at random (with replacement). Each random dataset will have the same number
+        of examples as the original dataset, but some examples may be missing or appear more 
+        than once due to the random sampling with replacement.
+        """   
+        n_samples = X.shape[0]
+        for each in range(self.num_trees):
+            random_ind = np.random.randint(0, n_samples, n_samples) 
+            X_sample = X.iloc[random_ind]
+            y_sample = y.iloc[random_ind]
+            #decision_tree = DecisionTreeClassifier(max_depth=self.max_depth)
+            #tree.fit(X_sample, y_sample)
+            #self.trees.append(decision_tree)
+            self._trees[each].fit(X_sample, y_sample)
+
+        # Q7
+        # TODO 
+        
+          
+    def predict(self, X):
+        """ Takes an input dataset X and returns the predictions for each example in X.
+        """
+        # Builds up a 2d array with n rows and T columns
+        # where n is the number of points to classify and T is the number of trees
+        predictions = np.zeros((len(X), len(self._trees)))
+        for i, tree in enumerate(self._trees):
+            # Make predictions using the current tree
+            preds = tree.predict(X)
+            
+            # Store those predictions in ith column of the 2d array
+            predictions[:, i] = preds
+            
+        # For each row of predictions, find the most frequent label (axis=1 means across columns)
+        return scipy.stats.mode(predictions, axis=1, keepdims=False).mode 
+  random_forest = RandomForest416(num_trees=2, max_depth=1)
+random_forest.fit(train_data[features], train_data[target])
+random_forest_train_predictions = random_forest.predict(train_data[features])
+
+#
+rf_train_accuracy = accuracy_score(train_data[target], random_forest_train_predictions)
+random_validation_prediction = random_forest.predict(validation_data[features])
+#
+rf_validation_accuracy = accuracy_score(validation_data[target], random_validation_prediction)
+# First calculate the accuracies for each depth
+depths = list(range(1, 26, 2))
+dt_accuracies = []
+rf_accuracies = []
+
+for i in depths:
+    print(f'Depth {i}')
+
+    # Train and evaluate a Decision Tree Classifier with given max_depth
+    tree = DecisionTreeClassifier(max_depth=i)
+    tree.fit(train_data[features], train_data[target])
+    dt_accuracies.append((
+        accuracy_score(tree.predict(train_data[features]), train_data[target]),
+        accuracy_score(tree.predict(validation_data[features]), validation_data[target])
+    ))
+    
+    # Train and evaluate our RandomForest classifier with given max_depth 
+    rf = RandomForest416(15, max_depth=i)
+    rf.fit(train_data[features], train_data[target])
+    rf_accuracies.append((     
+        accuracy_score(rf.predict(train_data[features]), train_data[target]),
+        accuracy_score(rf.predict(validation_data[features]), validation_data[target])
+    ))     
+# Then plot the scores
+fig, axs = plt.subplots(1, 2, figsize=(15, 5))
+
+# Plot training accuracies
+axs[0].plot(depths, [acc[0] for acc in dt_accuracies], label='DecisionTree')
+axs[0].plot(depths, [acc[0] for acc in rf_accuracies], label='RandomForest416')
+
+# Plot validation accuracies
+axs[1].plot(depths, [acc[1] for acc in dt_accuracies], label='DecisionTree')
+axs[1].plot(depths, [acc[1] for acc in rf_accuracies], label='RandomForest416')
+
+# Customize plots
+axs[0].set_title('Train Data')
+axs[1].set_title('Validation Data')
+for ax in axs:
+    ax.legend()
+    ax.set_xlabel('Max Depth')
+    ax.set_ylabel('Accuracy')
